@@ -1,26 +1,34 @@
 # Configurator
 
-A robust, standalone configuration management system with comprehensive input validation and CLI interface. This tool can be used both as a Go library and as a command-line binary for TOML configuration handling.
+A robust, standalone configuration management system with comprehensive input
+validation and CLI interface. This tool can be used both as a Go library
+and as a command-line binary for TOML configuration handling.
 
 ## Architecture
 
 This project provides both:
-- **Library API** (`config.go`): Generic TOML loading and project discovery for Go applications
-- **CLI Binary** (`cmd/configurator/main.go`): Standalone executable for shell scripts and external tools
+
+- **Library API** (`config.go`): Generic TOML loading and project
+  discovery for Go applications
+- **CLI Binary** (`cmd/configurator/main.go`): Standalone executable for
+  shell scripts and external tools
 
 ## Features
 
 - **Generic TOML Loading**: Load any TOML structure into Go structs
-- **Project Discovery**: Automatically find `project.toml` files by walking up directory tree
+- **Project Discovery**: Automatically find `project.toml` files by walking
+  up directory tree
 - **Security**: Path validation and cleaning to prevent directory traversal
 - **Robust Error Handling**: Clear error messages with context
 - **CLI Interface**: Validation, querying, and discovery commands
 - **Wrapper Compatibility**: Designed to work with existing internal config APIs
-- **Comprehensive Testing**: Edge cases, malformed input, and security scenarios covered
+- **Comprehensive Testing**: Edge cases, malformed input, and security
+  scenarios covered
 
 ## Installation
 
 ### As Binary
+
 ```bash
 # Build to ~/bin (default target)
 make build
@@ -30,6 +38,7 @@ cd cmd/configurator && go build -o ~/bin/configurator .
 ```
 
 ### As Go Module
+
 ```bash
 go get configurator
 ```
@@ -39,6 +48,7 @@ go get configurator
 ### Command Line Interface
 
 #### Configuration Validation
+
 ```bash
 # Auto-discover and validate project.toml
 ~/bin/configurator -validate
@@ -51,6 +61,7 @@ go get configurator
 ```
 
 #### Configuration Querying
+
 ```bash
 # Get specific configuration values using dot notation (auto-discovers config)
 ~/bin/configurator -get project.name
@@ -71,6 +82,7 @@ go get configurator
 ```
 
 #### Configuration Discovery
+
 ```bash
 # List all available configuration keys
 ~/bin/configurator -list
@@ -87,6 +99,7 @@ go get configurator
 ```
 
 #### Project Root Discovery
+
 ```bash
 # Find project root from current directory
 ~/bin/configurator -find-root
@@ -161,19 +174,23 @@ func main() {
 ### Functions
 
 #### `LoadInto(path string, target any) error`
+
 Loads a TOML file and unmarshals it into the provided struct pointer.
 - `path`: File path to TOML config (cleaned and validated)
 - `target`: Pointer to struct where config will be unmarshaled
 - Returns error if file cannot be read or TOML is invalid
 
 #### `FindProjectRoot(startDir string) (string, string, error)`
-Walks up from startDir until it finds `project.toml` or reaches filesystem root.
+
+Walks up from startDir until it finds `project.toml` or reaches
+filesystem root.
 - `startDir`: Directory to start search from
 - Returns: project root directory, path to project.toml, error
 
 #### `LoadFromProject(startDir string, target any) (string, error)`
+
 Combines project discovery and config loading in one call.
-- `startDir`: Directory to start search from  
+- `startDir`: Directory to start search from
 - `target`: Pointer to struct for config
 - Returns: project root directory, error
 
@@ -187,9 +204,11 @@ func Load(path string) (Config, error) {
     var cfg Config
     
     // Use configurator binary for validation first
-    cmd := exec.Command(os.ExpandEnv("$HOME/bin/configurator"), "-validate", "-config", path)
+    cmd := exec.Command(os.ExpandEnv("$HOME/bin/configurator"),
+        "-validate", "-config", path)
     if err := cmd.Run(); err != nil {
-        return cfg, fmt.Errorf("config validation failed: %w", err)
+        return cfg, fmt.Errorf("config validation failed: %w",
+            err)
     }
     
     // Then load normally
@@ -206,7 +225,7 @@ func Load(path string) (Config, error) {
 
 ## Project Structure
 
-```
+```text
 ~/Dev/configurator/
 ├── config.go              # Core configuration library
 ├── cmd/configurator/
@@ -261,9 +280,13 @@ Tests cover:
 ## Integration Examples
 
 ### book_expert Integration
-The configurator is used in book_expert through wrapper functions that maintain the original internal API while calling the standalone binary for validation underneath.
+
+The configurator is used in book_expert through wrapper functions that
+maintain the original internal API while calling the standalone binary
+for validation underneath.
 
 ### Shell Script Integration
+
 ```bash
 #!/bin/bash
 # Configuration management functions for shell scripts
@@ -310,13 +333,10 @@ DPI=$(get_config "settings.dpi")
 echo "Processing $PROJECT_NAME v$PROJECT_VERSION"
 echo "Input: $INPUT_DIR -> Output: $OUTPUT_DIR"
 echo "Workers: $WORKERS, DPI: $DPI"
-
-# Build commands with config values
-PDF_CONVERTER="./bin/pdf-to-png -input \"$INPUT_DIR\" -output \"$OUTPUT_DIR\" -workers $WORKERS -dpi $DPI"
-echo "Running: $PDF_CONVERTER"
 ```
 
 ### External Process Integration
+
 The binary design allows any language or system to use the configurator:
 
 ```python
@@ -400,7 +420,8 @@ This configurator follows key design principles:
 - **No Mocks**: Real implementations only, no fake/mock objects
 - **Security First**: Comprehensive input validation and path sanitization
 - **Wrapper Compatibility**: Maintains existing APIs while leveraging standalone architecture
-- **Unix Philosophy**: Does one thing well, integrates cleanly with other tools
+- **Unix Philosophy**: Does one thing well, integrates cleanly with
+  other tools
 - **Defensive Programming**: Graceful handling of edge cases and failures
 - **Configuration Validation**: Always validate before processing
 - **Auto-Discovery**: Intelligent project.toml discovery from any directory

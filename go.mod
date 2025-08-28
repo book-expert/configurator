@@ -1,4 +1,4 @@
-module configurator
+module github.com/nnikolov3/configurator
 
 go 1.25
 

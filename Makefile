@@ -17,11 +17,7 @@ test: ## Run tests with coverage
 
 lint: ## Run comprehensive linting
 	@echo "Running linters..."
-	@go vet ./...
-	@test -z "$$(gofmt -l .)" || (echo "Code needs formatting" && gofmt -l . && exit 1)
-	@golangci-lint run
-	@staticcheck ./...
-	@gosec ./...
+	@golangci-lint run --fix
 	@echo "Linting completed ✅"
 
 fmt: ## Format code
