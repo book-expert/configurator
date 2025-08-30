@@ -1,9 +1,13 @@
 // Configurator CLI - standalone tool for project.toml management
+//
+// This package provides a command-line interface for managing project.toml
+// configuration files, including validation, key extraction, and project root discovery.
 package main
 
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,8 +15,95 @@ import (
 )
 
 const (
-	errorPrefix = "Error: %v"
-	twoFields   = 2
+	// Exit codes.
+	ExitSuccess = 0
+	ExitError   = 1
+
+	// Field count constants.
+	TwoFields = 2
+
+	// Flag names.
+	ConfigFlagName   = "config"
+	ValidateFlagName = "validate"
+	GetFlagName      = "get"
+	ListFlagName     = "list"
+	FindRootFlagName = "find-root"
+	HelpFlagName     = "help"
+
+	// Error message templates.
+	ErrorPrefix        = "Error: %v"
+	ErrorListingKeys   = "Error listing keys: %v"
+	ErrorLoadingConfig = "Error loading config: %v"
+	KeyNotFoundError   = "Key not found: %s"
+
+	// Error strings for variables.
+	ErrMsgProjectNotFound  = "project.toml not found"
+	ErrMsgWorkingDirectory = "failed to get working directory"
+	ErrMsgReadConfigFile   = "failed to read config file"
+	ErrMsgUnsupportedType  = "unsupported target type"
+	ErrMsgFindProjectRoot  = "failed to find project root"
+	ErrMsgLoadConfig       = "failed to load config"
+	ErrMsgReadFile         = "read file: %w"
+
+	// Success messages.
+	ConfigurationValid  = "Configuration valid"
+	UseHelpMessage      = "Use --help for available commands"
+	ConfigLoadedMessage = "Configuration loaded from: %s"
+	ProjectRootMessage  = "Project root: %s\nConfig file: %s\n"
+
+	// Flag descriptions.
+	ConfigPathDescription = "Path to project.toml file"
+	ValidateDescription   = "Validate configuration file"
+	GetDescription        = "Get configuration value (dot notation: project.name)"
+	ListDescription       = "List all configuration keys"
+	FindRootDescription   = "Find project root directory"
+	HelpDescription       = "Show help"
+
+	// File and directory names.
+	ProjectConfigFile = "project.toml"
+
+	// Format strings.
+	ValueFormat = "%v"
+
+	// Special characters.
+	QuoteChars      = "\"'"
+	CommentPrefix   = "#"
+	DotSeparator    = "."
+	EqualsSeparator = "="
+
+	// Help text.
+	HelpText = `Configurator - Project configuration management tool
+
+Usage: configurator [options]
+
+Options:
+  -config PATH     Path to project.toml file (auto-discovered if not specified)
+  -validate        Validate configuration file syntax and structure
+  -get KEY         Get configuration value (dot notation: project.name)
+  -list            List all configuration keys
+  -find-root       Find and display project root directory
+  -help            Show this help message
+
+Examples:
+  configurator -validate
+  configurator -get project.name
+  configurator -get paths.input_dir
+  configurator -list
+  configurator -find-root
+
+Exit codes:
+  0  Success
+  1  Error (file not found, invalid syntax, key not found)`
+)
+
+var (
+	// Error variables.
+	errProjectNotFound = errors.New(ErrMsgProjectNotFound)
+	errWorkingDir      = errors.New(ErrMsgWorkingDirectory)
+	errReadConfig      = errors.New(ErrMsgReadConfigFile)
+	errUnsupportedType = errors.New(ErrMsgUnsupportedType)
+	errFindRoot        = errors.New(ErrMsgFindProjectRoot)
+	errLoadConfig      = errors.New(ErrMsgLoadConfig)
 )
 
 type cliFlags struct {
@@ -34,13 +125,12 @@ func parseFlags() *cliFlags {
 
 func createFlags() *cliFlags {
 	return &cliFlags{
-		configPath: flag.String("config", "", "Path to project.toml file"),
-		validate:   flag.Bool("validate", false, "Validate configuration file"),
-		get: flag.String("get", "",
-			"Get configuration value (dot notation: project.name)"),
-		list:     flag.Bool("list", false, "List all configuration keys"),
-		findRoot: flag.Bool("find-root", false, "Find project root directory"),
-		help:     flag.Bool("help", false, "Show help"),
+		configPath: flag.String(ConfigFlagName, "", ConfigPathDescription),
+		validate:   flag.Bool(ValidateFlagName, false, ValidateDescription),
+		get:        flag.String(GetFlagName, "", GetDescription),
+		list:       flag.Bool(ListFlagName, false, ListDescription),
+		findRoot:   flag.Bool(FindRootFlagName, false, FindRootDescription),
+		help:       flag.Bool(HelpFlagName, false, HelpDescription),
 	}
 }
 
@@ -48,11 +138,11 @@ func fatal(format string, args ...any) {
 	log.Fatalf(format, args...)
 }
 
+// loadInto reads a TOML-like config file and unmarshals it into the provided struct.
 func loadInto(path string, target any) error {
 	cleanPath := getCleanPath(path)
 
-	// #nosec G304 - path is cleaned and validated above
-	data, err := os.ReadFile(cleanPath)
+	data, err := readConfigData(cleanPath)
 	if err != nil {
 		return errReadConfig
 	}
@@ -67,29 +157,39 @@ func loadInto(path string, target any) error {
 	return nil
 }
 
+func readConfigData(path string) ([]byte, error) {
+	//nolint:gosec // G304: file path is cleaned and validated
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf(ErrMsgReadFile, err)
+	}
+
+	return data, nil
+}
+
 func getCleanPath(path string) string {
 	cleanPath := filepath.Clean(path)
-	if isAbsPath(cleanPath) {
+	if isAbsolutePath(cleanPath) {
 		return cleanPath
 	}
 
-	return makeAbsolute(cleanPath)
+	return makeAbsolutePath(cleanPath)
 }
 
-func isAbsPath(path string) bool {
+func isAbsolutePath(path string) bool {
 	return filepath.IsAbs(path)
 }
 
-func makeAbsolute(path string) string {
-	wd := getWorkingDir()
+func makeAbsolutePath(path string) string {
+	wd := getCurrentDir()
 	if wd == "" {
 		return path
 	}
 
-	return joinPath(wd, path)
+	return joinPaths(wd, path)
 }
 
-func getWorkingDir() string {
+func getCurrentDir() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
@@ -98,83 +198,96 @@ func getWorkingDir() string {
 	return wd
 }
 
-func joinPath(dir, file string) string {
+func joinPaths(dir, file string) string {
 	return filepath.Join(dir, file)
 }
 
-var (
-	errProjectNotFound = errors.New("project.toml not found")
-	errWorkingDir      = errors.New("failed to get working directory")
-	errReadConfig      = errors.New("failed to read config file")
-	errUnsupportedType = errors.New("unsupported target type")
-	errFindRoot        = errors.New("failed to find project root")
-	errLoadConfig      = errors.New("failed to load config")
-)
-
+// parseSimpleTOML parses very simple TOML-like key=value lines into a nested map.
 func parseSimpleTOML(content string) map[string]any {
-	result := makeMap()
-	lines := splitLines(content)
+	result := createMap()
 
+	lines := getLines(content)
 	for _, line := range lines {
-		processLine(result, line)
+		processConfigLine(result, line)
 	}
 
 	return result
 }
 
-func splitLines(content string) []string {
+func createMap() map[string]any {
+	return make(map[string]any)
+}
+
+func getLines(content string) []string {
 	return strings.Split(content, "\n")
 }
 
-func processLine(result map[string]any, line string) {
-	line = trimSpace(line)
+func processConfigLine(result map[string]any, line string) {
+	line = trimWhitespace(line)
 	if shouldSkipLine(line) {
 		return
 	}
 
-	key, value, ok := parseLine(line)
-	if !ok {
-		return
+	key, value, ok := parseConfigLine(line)
+	if ok {
+		setNestedValue(result, key, value)
 	}
-
-	setNestedValue(result, key, value)
 }
 
+// shouldSkipLine: complexity reduced to a single boolean expression.
 func shouldSkipLine(line string) bool {
-	return isEmpty(line) || isComment(line)
+	return isEmptyLine(line) || isCommentLine(line) || isSectionHeader(line)
 }
 
-func isEmpty(s string) bool {
+// small helper extracted to avoid extra branching in shouldSkipLine.
+func isSectionHeader(line string) bool {
+	return strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]")
+}
+
+func isEmptyLine(s string) bool {
 	return s == ""
 }
 
-func isComment(line string) bool {
-	return hasPrefix2(line, "#")
+func isCommentLine(line string) bool {
+	return hasCommentPrefix(line, CommentPrefix)
 }
 
-func parseLine(line string) (string, string, bool) {
-	parts := splitByEquals(line)
-	if !hasTwoParts(parts) {
+func hasCommentPrefix(line, prefix string) bool {
+	return strings.HasPrefix(line, prefix)
+}
+
+func parseConfigLine(line string) (key, value string, ok bool) {
+	parts := splitOnEquals(line)
+	if !hasTwoElements(parts) {
 		return "", "", false
 	}
 
-	key := trimSpace(parts[0])
-	value := trimSpace(parts[1])
-	value = trimQuotes(value)
+	key = trimWhitespace(parts[0])
+	value = trimWhitespace(parts[1])
+
+	value = removeQuotes(value)
 
 	return key, value, true
 }
 
-func hasTwoParts(parts []string) bool {
-	return len(parts) == twoFields
+func splitOnEquals(s string) []string {
+	return strings.SplitN(s, EqualsSeparator, TwoFields)
+}
+
+func hasTwoElements(parts []string) bool {
+	return len(parts) == TwoFields
+}
+
+func removeQuotes(s string) string {
+	return strings.Trim(s, QuoteChars)
 }
 
 func setNestedValue(m map[string]any, key, value string) {
-	parts := strings.Split(key, ".")
+	parts := splitByDot(key)
 	current := m
 
 	for i, part := range parts {
-		if i == len(parts)-1 {
+		if isLastPart(i, parts) {
 			current[part] = value
 
 			return
@@ -182,6 +295,14 @@ func setNestedValue(m map[string]any, key, value string) {
 
 		current = ensureNestedMap(current, part)
 	}
+}
+
+func splitByDot(s string) []string {
+	return strings.Split(s, DotSeparator)
+}
+
+func isLastPart(index int, parts []string) bool {
+	return index == len(parts)-1
 }
 
 func ensureNestedMap(targetMap map[string]any, key string) map[string]any {
@@ -192,60 +313,80 @@ func ensureNestedMap(targetMap map[string]any, key string) map[string]any {
 	if nested, ok := targetMap[key].(map[string]any); ok {
 		return nested
 	}
+	// If existing value is not a map, overwrite with a new map to continue nesting
+	newMap := make(map[string]any)
 
-	return targetMap
+	targetMap[key] = newMap
+
+	return newMap
 }
 
-func findProjectRoot(startDir string) (string, string, error) {
-	return searchUpwards(startDir)
+func findProjectRoot(startDir string) (rootDir, configPath string, err error) {
+	return searchDirectoryUpwards(startDir)
 }
 
-func searchUpwards(dir string) (string, string, error) {
-	cur := dir
-	for cur != filepath.Dir(cur) {
-		if found, path := checkForConfig(cur); found {
-			return cur, path, nil
+func searchDirectoryUpwards(dir string) (rootDir, configPath string, err error) {
+	current := dir
+	for !isAtRoot(current) {
+		if configPath := findConfigInDir(current); configPath != "" {
+			return current, configPath, nil
 		}
 
-		cur = filepath.Dir(cur)
+		current = filepath.Dir(current)
 	}
 
 	return "", "", errProjectNotFound
 }
 
-func checkForConfig(dir string) (bool, string) {
-	candidate := filepath.Join(dir, "project.toml")
-	_, err := os.Stat(candidate)
+func isAtRoot(current string) bool {
+	return current == filepath.Dir(current)
+}
 
-	return err == nil, candidate
+func findConfigInDir(dir string) string {
+	candidate := getProjectConfigPath(dir)
+	if fileExists(candidate) {
+		return candidate
+	}
+
+	return ""
+}
+
+func getProjectConfigPath(dir string) string {
+	return filepath.Join(dir, ProjectConfigFile)
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+
+	return err == nil
 }
 
 func resolveConfigPath(flags *cliFlags) (string, error) {
-	if hasCustomPath(flags) {
-		return getCustomPath(flags), nil
+	if hasCustomConfigPath(flags) {
+		return getCustomConfigPath(flags), nil
 	}
 
-	return findConfigFromWorkingDir()
+	return findConfigFromWorkingDirectory()
 }
 
-func hasCustomPath(flags *cliFlags) bool {
+func hasCustomConfigPath(flags *cliFlags) bool {
 	return *flags.configPath != ""
 }
 
-func getCustomPath(flags *cliFlags) string {
+func getCustomConfigPath(flags *cliFlags) string {
 	return *flags.configPath
 }
 
-func findConfigFromWorkingDir() (string, error) {
-	wd := getCurrentWorkingDir()
+func findConfigFromWorkingDirectory() (string, error) {
+	wd := getWorkingDirectory()
 	if wd == "" {
 		return "", errWorkingDir
 	}
 
-	return findConfigFromDir(wd)
+	return findConfigInDirectory(wd)
 }
 
-func getCurrentWorkingDir() string {
+func getWorkingDirectory() string {
 	wd, err := os.Getwd()
 	if err != nil {
 		return ""
@@ -254,7 +395,7 @@ func getCurrentWorkingDir() string {
 	return wd
 }
 
-func findConfigFromDir(dir string) (string, error) {
+func findConfigInDirectory(dir string) (string, error) {
 	_, configFile, err := findProjectRoot(dir)
 	if err != nil {
 		return "", errFindRoot
@@ -266,18 +407,18 @@ func findConfigFromDir(dir string) (string, error) {
 func showProjectRoot() {
 	wd, err := os.Getwd()
 	if err != nil {
-		fatal(errorPrefix, err)
+		fatal(ErrorPrefix, err)
 	}
 
 	root, configFile, err := findProjectRoot(wd)
 	if err != nil {
-		fatal(errorPrefix, err)
+		fatal(ErrorPrefix, err)
 	}
 
-	log.Printf("Project root: %s\nConfig file: %s\n", root, configFile)
+	log.Printf(ProjectRootMessage, root, configFile)
 }
 
-func loadConfig(configPath string) (map[string]any, error) {
+func loadConfiguration(configPath string) (map[string]any, error) {
 	var config map[string]any
 
 	err := loadInto(configPath, &config)
@@ -289,22 +430,23 @@ func loadConfig(configPath string) (map[string]any, error) {
 }
 
 func executeCommand(flags *cliFlags, config map[string]any, configPath string) {
-	if *flags.validate {
-		log.Println("Configuration valid")
+	if shouldValidateConfig(flags) {
+		handleValidateCommand()
 
 		return
 	}
 
-	if *flags.list {
-		err := listKeys(config, "")
-		if err != nil {
-			fatal("Error listing keys: %v", err)
-		}
+	executeDataCommand(flags, config, configPath)
+}
+
+func executeDataCommand(flags *cliFlags, config map[string]any, configPath string) {
+	if shouldListKeys(flags) {
+		handleListCommand(config)
 
 		return
 	}
 
-	if *flags.get != "" {
+	if shouldGetValue(flags) {
 		handleGetCommand(config, *flags.get)
 
 		return
@@ -313,32 +455,54 @@ func executeCommand(flags *cliFlags, config map[string]any, configPath string) {
 	showDefaultOutput(configPath)
 }
 
+func shouldValidateConfig(flags *cliFlags) bool {
+	return *flags.validate
+}
+
+func shouldListKeys(flags *cliFlags) bool {
+	return *flags.list
+}
+
+func shouldGetValue(flags *cliFlags) bool {
+	return *flags.get != ""
+}
+
+func handleValidateCommand() {
+	log.Println(ConfigurationValid)
+}
+
+func handleListCommand(config map[string]any) {
+	err := listConfigKeys(config, "")
+	if err != nil {
+		fatal(ErrorListingKeys, err)
+	}
+}
+
 func handleGetCommand(config map[string]any, key string) {
-	value := getValue(config, key)
+	value := getConfigValue(config, key)
 	if value == nil {
-		fatal("Key not found: %s", key)
+		fatal(KeyNotFoundError, key)
 	}
 
-	log.Printf("%v", value)
+	log.Printf(ValueFormat, value)
 }
 
 func showDefaultOutput(configPath string) {
-	log.Printf("Configuration loaded from: %s", configPath)
-	log.Println("Use --help for available commands")
+	log.Printf(ConfigLoadedMessage, configPath)
+	log.Println(UseHelpMessage)
 }
 
 func main() {
 	flags := parseFlags()
-
 	if shouldShowHelp(flags) {
 		return
 	}
 
-	if shouldShowRoot(flags) {
+	if shouldShowProjectRoot(flags) {
 		return
 	}
 
-	runConfigCommand(flags)
+	runMainCommand(flags)
 }
 
 func shouldShowHelp(flags *cliFlags) bool {
@@ -351,7 +515,7 @@ func shouldShowHelp(flags *cliFlags) bool {
 	return false
 }
 
-func shouldShowRoot(flags *cliFlags) bool {
+func shouldShowProjectRoot(flags *cliFlags) bool {
 	if *flags.findRoot {
 		showProjectRoot()
 
@@ -361,58 +525,37 @@ func shouldShowRoot(flags *cliFlags) bool {
 	return false
 }
 
-func runConfigCommand(flags *cliFlags) {
-	configPath := mustResolveConfig(flags)
-	config := mustLoadConfig(configPath)
+func runMainCommand(flags *cliFlags) {
+	configPath := mustResolveConfigPath(flags)
+	config := mustLoadConfiguration(configPath)
 	executeCommand(flags, config, configPath)
 }
 
-func mustResolveConfig(flags *cliFlags) string {
+func mustResolveConfigPath(flags *cliFlags) string {
 	configPath, err := resolveConfigPath(flags)
 	if err != nil {
-		fatal(errorPrefix, err)
+		fatal(ErrorPrefix, err)
 	}
 
 	return configPath
 }
 
-func mustLoadConfig(configPath string) map[string]any {
-	config, err := loadConfig(configPath)
+func mustLoadConfiguration(configPath string) map[string]any {
+	config, err := loadConfiguration(configPath)
 	if err != nil {
-		fatal("Error loading config: %v", err)
+		fatal(ErrorLoadingConfig, err)
 	}
 
 	return config
 }
 
 func showHelp() {
-	log.Println(`Configurator - Project configuration management tool
-
-Usage: configurator [options]
-
-Options:
-  -config PATH     Path to project.toml file (auto-discovered if not specified)
-  -validate        Validate configuration file syntax and structure
-  -get KEY         Get configuration value (dot notation: project.name)
-  -list            List all configuration keys
-  -find-root       Find and display project root directory
-  -help            Show this help message
-
-Examples:
-  configurator -validate
-  configurator -get project.name
-  configurator -get paths.input_dir
-  configurator -list
-  configurator -find-root
-
-Exit codes:
-  0  Success
-  1  Error (file not found, invalid syntax, key not found)`)
+	log.Println(HelpText)
 }
 
-func listKeys(data map[string]any, prefix string) error {
+func listConfigKeys(data map[string]any, prefix string) error {
 	for key, value := range data {
-		err := processKey(key, value, prefix)
+		err := processConfigKey(key, value, prefix)
 		if err != nil {
 			return err
 		}
@@ -421,15 +564,10 @@ func listKeys(data map[string]any, prefix string) error {
 	return nil
 }
 
-func processKey(key string, value any, prefix string) error {
+func processConfigKey(key string, value any, prefix string) error {
 	fullKey := buildFullKey(prefix, key)
 	if nested, ok := value.(map[string]any); ok {
-		err := printNestedKeys(nested, fullKey)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return printNestedKeys(nested, fullKey)
 	}
 
 	log.Println(fullKey)
@@ -438,7 +576,7 @@ func processKey(key string, value any, prefix string) error {
 }
 
 func printNestedKeys(data map[string]any, prefix string) error {
-	return listKeys(data, prefix)
+	return listConfigKeys(data, prefix)
 }
 
 func buildFullKey(prefix, key string) string {
@@ -454,17 +592,17 @@ func hasPrefix(prefix string) bool {
 }
 
 func combineKeys(prefix, key string) string {
-	return prefix + "." + key
+	return prefix + DotSeparator + key
 }
 
-func getValue(data map[string]any, key string) any {
+func getConfigValue(data map[string]any, key string) any {
 	keys := splitDotNotation(key)
 
 	return navigateToValue(data, keys)
 }
 
 func navigateToValue(data map[string]any, keys []string) any {
-	current := any(data)
+	var current any = data
 	for _, k := range keys {
 		current = getNextLevel(current, k)
 		if current == nil {
@@ -487,26 +625,6 @@ func splitDotNotation(key string) []string {
 	return splitByDot(key)
 }
 
-func splitByDot(s string) []string {
-	return strings.Split(s, ".")
-}
-
-func trimSpace(s string) string {
+func trimWhitespace(s string) string {
 	return strings.TrimSpace(s)
-}
-
-func hasPrefix2(s, prefix string) bool {
-	return strings.HasPrefix(s, prefix)
-}
-
-func splitByEquals(s string) []string {
-	return strings.SplitN(s, "=", twoFields)
-}
-
-func trimQuotes(s string) string {
-	return strings.Trim(s, "\"'")
-}
-
-func makeMap() map[string]any {
-	return make(map[string]any)
 }
