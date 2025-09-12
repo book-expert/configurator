@@ -6,8 +6,11 @@ package configurator
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -142,4 +145,32 @@ func LoadFromProject(startDir string, target any) (string, error) {
 	}
 
 	return projectRoot, nil
+}
+
+// LoadFromURL fetches a TOML config from a URL and unmarshals it into the provided struct.
+func LoadFromURL(url string, target any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second) // 10-second timeout
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("create HTTP request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("fetch TOML from URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected HTTP status: %s", resp.Status)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response body: %w", err)
+	}
+
+	return unmarshalTOML(data, target)
 }
