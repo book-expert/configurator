@@ -2,10 +2,16 @@ package configurator_test
 
 import (
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/nnikolov3/logger"
+	"github.com/stretchr/testify/require"
 
 	"github.com/nnikolov3/configurator"
 )
@@ -558,4 +564,37 @@ func validateDeepPathSuccess(t *testing.T, deepPath, expectedRoot, expectedPath 
 	foundRoot, foundPath := findAndValidateProjectRoot(t, deepPath)
 	validateFoundRoot(t, foundRoot, expectedRoot)
 	validateFoundPath(t, foundPath, expectedPath)
+}
+
+func TestLoadFromURL(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+
+			_, err := io.WriteString(w, TestProjectConfig)
+			if err != nil {
+				t.Fatalf("Failed to write response: %v", err)
+			}
+		}),
+	)
+	defer server.Close()
+
+	var cfg testConfig
+
+	log, err := logger.New(".", "test.log")
+	require.NoError(t, err)
+
+	defer func() {
+		closeErr := log.Close()
+		if closeErr != nil {
+			t.Logf("failed to close logger: %v", closeErr)
+		}
+	}()
+
+	err = configurator.LoadFromURL(server.URL, &cfg, log)
+	require.NoError(t, err)
+
+	validateProjectConfig(t, cfg)
 }
