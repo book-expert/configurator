@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nnikolov3/logger"
+	"github.com/book-expert/logger"
 	"github.com/pelletier/go-toml/v2"
 )
 

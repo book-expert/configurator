@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nnikolov3/logger"
+	"github.com/book-expert/logger"
 
-	"github.com/nnikolov3/configurator"
+	"github.com/book-expert/configurator"
 )
 
 const (
