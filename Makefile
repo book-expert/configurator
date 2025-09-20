@@ -18,6 +18,9 @@ test: ## Run tests with coverage
 lint: ## Run comprehensive linting
 	@echo "Running linters..."
 	@golangci-lint run --fix
+	@echo "Cleaning caches..."
+	@golangci-lint cache clean
+	@go clean -cache
 	@echo "Linting completed ✅"
 
 fmt: ## Format code
