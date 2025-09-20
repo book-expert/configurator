@@ -1,98 +1,54 @@
 # Configurator
 
-A robust, standalone configuration management system with comprehensive input validation and CLI interface. This tool can be used both as a Go library and as a command-line binary for TOML configuration handling.
+## Project Summary
 
-## Build Status
+Configurator is a Go library that fetches a TOML configuration file from a URL and unmarshals it into a Go struct.
 
----
+## Detailed Description
 
-## Architecture
+This library provides a simple and robust way to manage configuration in a distributed environment. It retrieves a TOML configuration file from a URL specified by the `PROJECT_TOML` environment variable. This allows for centralized configuration management, where services can fetch their configuration from a single source of truth.
 
-This project provides both:
+The library includes features such as:
+-   Fetching configuration from a URL.
+-   Unmarshaling TOML data into a type-safe Go struct.
+-   Configurable timeout for HTTP requests.
+-   Comprehensive error handling.
 
-- **Library API** (`config.go`): Generic TOML loading and project discovery for Go applications.
-- **CLI Binary** (`cmd/configurator/main.go`): Standalone executable for shell scripts and external tools.
+## Technology Stack
 
----
+-   **Programming Language:** Go 1.25
+-   **Libraries:**
+    -   `github.com/book-expert/logger`
+    -   `github.com/pelletier/go-toml/v2`
+    -   `github.com/stretchr/testify`
 
-## Features
+## Getting Started
 
-- **Generic TOML Loading**: Load any TOML structure into Go structs.
-- **Project Discovery**: Automatically find `project.toml` files by walking up the directory tree.
-- **Security**: Path validation and cleaning to prevent directory traversal.
-- **Robust Error Handling**: Clear error messages with context.
-- **CLI Interface**: Validation, querying, and discovery commands.
-- **Wrapper Compatibility**: Designed to work with existing internal config APIs.
-- **Comprehensive Testing**: Edge cases, malformed input, and security scenarios are covered.
+### Prerequisites
 
----
+-   Go 1.25 or later.
 
-## Installation
+### Installation
 
-### As Binary
-
-```bash
-# Build to ~/bin (default target)
-make build
-
-# Or build manually
-cd cmd/configurator && go build -o ~/bin/configurator .
-```
-
-### As Go Module
+To use this library in your project, you can use `go get`:
 
 ```bash
-go get configurator
+go get github.com/book-expert/configurator
 ```
-
----
 
 ## Usage
 
-### Command Line Interface
-
-#### Configuration Validation
-
-```bash
-# Auto-discover and validate project.toml
-~/bin/configurator -validate
-
-# Validate specific config file
-~/bin/configurator -validate -config /path/to/project.toml
-```
-
-#### Configuration Querying
-
-```bash
-# Get specific configuration values using dot notation
-~/bin/configurator -get project.name
-~/bin/configurator -get settings.debug
-```
-
-#### Configuration Discovery
-
-```bash
-# List all available configuration keys
-~/bin/configurator -list
-```
-
-#### Project Root Discovery
-
-```bash
-# Find project root from current directory
-~/bin/configurator -find-root
-```
-
-### Library API
-
-#### Basic Configuration Loading
+To use the configurator library, you need to set the `PROJECT_TOML` environment variable to the URL of your TOML configuration file.
 
 ```go
 package main
 
 import (
     "fmt"
-    "configurator"
+    "os"
+
+    "github.com/book-expert/configurator"
+    "github.com/book-expert/logger"
 )
 
 type Config struct {
@@ -107,55 +63,34 @@ type Config struct {
 }
 
 func main() {
+    // Set the PROJECT_TOML environment variable to the URL of your configuration file.
+    os.Setenv("PROJECT_TOML", "http://example.com/config.toml")
+
     var cfg Config
-    if err := configurator.LoadInto("config.toml", &cfg); err != nil {
+    log, err := logger.New("/tmp", "test.log")
+    if err != nil {
         panic(err)
     }
-    fmt.Printf("Loaded: %s v%s\n", cfg.Project.Name, cfg.Project.Version)
+
+    if err := configurator.Load(&cfg, log); err != nil {
+        panic(err)
+    }
+
+    fmt.Printf("Loaded: %s v%s
+", cfg.Project.Name, cfg.Project.Version)
 }
 ```
 
----
+## Testing
 
-## API
+To run the tests for this library, you can use the `make test` command:
 
-### Functions
-
-#### `LoadInto(path string, target any) error`
-
-Loads a TOML file and unmarshals it into the provided struct pointer.
-
-#### `FindProjectRoot(startDir string) (projectRoot string, configPath string, err error)`
-
-Walks up from `startDir` until it finds `project.toml` or reaches the filesystem root.
-
-#### `LoadFromProject(startDir string, target any) (string, error)`
-
-Combines project discovery and config loading in one call.
-
----
-
-## Design Philosophy & Code Style
-
-This configurator follows key design principles:
-
-- **Unix Philosophy**: Does one thing well and integrates cleanly with other tools.
-- **Security First**: Comprehensive input validation and path sanitization.
-- **Auto-Discovery**: Intelligent `project.toml` discovery from any directory.
-- **Code Style**: This project adheres to the standard Go practice of using **unnamed return values** for function signatures, reserving named returns only for exceptional cases where they significantly improve clarity. This convention is enforced by the `nonamedreturns` linter.
-
----
-
-## Project Structure
-
-```text
-~/Dev/configurator/
-├── cmd/configurator/
-│   └── main.go           # CLI binary implementation
-├── config.go              # Core configuration library
-├── config_test.go         # Comprehensive test suite
-├── go.mod                 # Go module definition
-├── Makefile               # Build automation (targets ~/bin)
-├── project.toml           # Project configuration
-└── README.md              # This documentation
+```bash
+make test
 ```
+
+This will run the tests and display the coverage.
+
+## License
+
+Distributed under the MIT License. See the `LICENSE` file for more information.
