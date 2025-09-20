@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/book-expert/logger"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/book-expert/configurator"
@@ -40,10 +41,10 @@ type testConfig struct {
 
 func TestLoad_Success(t *testing.T) {
 	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, err := fmt.Fprint(w, TestProjectConfig)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		}),
 	)
 	defer server.Close()
@@ -51,6 +52,7 @@ func TestLoad_Success(t *testing.T) {
 	t.Setenv("PROJECT_TOML", server.URL)
 
 	var cfg testConfig
+
 	log, err := logger.New(t.TempDir(), "test.log")
 	require.NoError(t, err)
 
@@ -64,11 +66,13 @@ func TestLoad_Success(t *testing.T) {
 }
 
 func TestLoad_NoEnvVar(t *testing.T) {
+	t.Parallel()
 	// Ensure the environment variable is not set
 	err := os.Unsetenv("PROJECT_TOML")
 	require.NoError(t, err)
 
 	var cfg testConfig
+
 	log, err := logger.New(t.TempDir(), "test.log")
 	require.NoError(t, err)
 
@@ -81,6 +85,7 @@ func TestLoad_InvalidURL(t *testing.T) {
 	t.Setenv("PROJECT_TOML", "http://invalid-url-that-does-not-exist.local")
 
 	var cfg testConfig
+
 	log, err := logger.New(t.TempDir(), "test.log")
 	require.NoError(t, err)
 
@@ -90,7 +95,7 @@ func TestLoad_InvalidURL(t *testing.T) {
 
 func TestLoad_BadResponse(t *testing.T) {
 	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}),
 	)
@@ -99,6 +104,7 @@ func TestLoad_BadResponse(t *testing.T) {
 	t.Setenv("PROJECT_TOML", server.URL)
 
 	var cfg testConfig
+
 	log, err := logger.New(t.TempDir(), "test.log")
 	require.NoError(t, err)
 
@@ -109,10 +115,10 @@ func TestLoad_BadResponse(t *testing.T) {
 
 func TestLoad_InvalidToml(t *testing.T) {
 	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, err := fmt.Fprint(w, `[project] name = "test-project"`)
-			require.NoError(t, err)
+			assert.NoError(t, err)
 		}),
 	)
 	defer server.Close()
@@ -120,6 +126,7 @@ func TestLoad_InvalidToml(t *testing.T) {
 	t.Setenv("PROJECT_TOML", server.URL)
 
 	var cfg testConfig
+
 	log, err := logger.New(t.TempDir(), "test.log")
 	require.NoError(t, err)
 
