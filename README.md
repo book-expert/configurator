@@ -2,35 +2,33 @@
 
 ## Project Summary
 
-Configurator is a Go library that fetches a TOML configuration file from a URL and unmarshals it into a Go struct.
+A Go library that loads TOML configuration from a URL defined by the `PROJECT_TOML` environment variable and unmarshals it into typed structs.
 
 ## Detailed Description
 
-This library provides a simple and robust way to manage configuration in a distributed environment. It retrieves a TOML configuration file from a URL specified by the `PROJECT_TOML` environment variable. This allows for centralized configuration management, where services can fetch their configuration from a single source of truth.
+The configurator library centralizes configuration loading for the Book Expert services. It performs an HTTP GET against the URL provided in `PROJECT_TOML`, enforces a request timeout, and unmarshals the retrieved TOML payload into the caller's struct. This enables services to share a single `project.toml` file while keeping configuration data type-safe. The library uses the shared `logger` package to report issues such as missing environment variables, HTTP failures, or TOML parsing errors.
 
-The library includes features such as:
--   Fetching configuration from a URL.
--   Unmarshaling TOML data into a type-safe Go struct.
--   Configurable timeout for HTTP requests.
--   Comprehensive error handling.
+Key features include:
+
+- URL-driven configuration sourcing via `PROJECT_TOML`.
+- Context-based HTTP timeouts to prevent blocked startups.
+- Strict error propagation with contextual wrapping for easier diagnosis.
+- Integration with the shared `logger` package for structured error reporting.
 
 ## Technology Stack
 
--   **Programming Language:** Go 1.25
--   **Libraries:**
-    -   `github.com/book-expert/logger`
-    -   `github.com/pelletier/go-toml/v2`
-    -   `github.com/stretchr/testify`
+- **Language:** Go 1.25
+- **Parsing:** `github.com/pelletier/go-toml/v2`
+- **Logging:** `github.com/book-expert/logger`
+- **Testing:** `testing`, `net/http/httptest`, `github.com/stretchr/testify`
 
 ## Getting Started
 
 ### Prerequisites
 
--   Go 1.25 or later.
+- Go 1.25 or newer installed locally.
 
 ### Installation
-
-To use this library in your project, you can use `go get`:
 
 ```bash
 go get github.com/book-expert/configurator
@@ -38,59 +36,50 @@ go get github.com/book-expert/configurator
 
 ## Usage
 
-To use the configurator library, you need to set the `PROJECT_TOML` environment variable to the URL of your TOML configuration file.
-
 ```go
 package main
 
 import (
     "fmt"
-    "os"
 
     "github.com/book-expert/configurator"
     "github.com/book-expert/logger"
 )
 
-type Config struct {
-    Project struct {
-        Name    string `toml:"name"`
-        Version string `toml:"version"`
-    } `toml:"project"`
-    Settings struct {
-        Debug bool `toml:"debug"`
-        Port  int  `toml:"port"`
-    } `toml:"settings"`
+type ServiceConfig struct {
+    Service struct {
+        Name string `toml:"name"`
+    } `toml:"service"`
 }
 
 func main() {
-    // Set the PROJECT_TOML environment variable to the URL of your configuration file.
-    os.Setenv("PROJECT_TOML", "http://example.com/config.toml")
+    // Initialize a shared logger.
+    logInstance, createLoggerErr := logger.New("/tmp/logs", "configurator.log")
+    if createLoggerErr != nil {
+        panic(createLoggerErr)
+    }
+    defer logInstance.Close()
 
-    var cfg Config
-    log, err := logger.New("/tmp", "test.log")
-    if err != nil {
-        panic(err)
+    // PROJECT_TOML must be set to a reachable URL that returns TOML content.
+    var cfg ServiceConfig
+    loadConfigErr := configurator.Load(&cfg, logInstance)
+    if loadConfigErr != nil {
+        panic(loadConfigErr)
     }
 
-    if err := configurator.Load(&cfg, log); err != nil {
-        panic(err)
-    }
-
-    fmt.Printf("Loaded: %s v%s
-", cfg.Project.Name, cfg.Project.Version)
+    fmt.Printf("Loaded configuration for %s\n", cfg.Service.Name)
 }
 ```
 
 ## Testing
 
-To run the tests for this library, you can use the `make test` command:
-
 ```bash
-make test
+cd configurator
+go test ./...
 ```
 
-This will run the tests and display the coverage.
+The test suite spins up an in-memory HTTP server that serves the shared `project.toml` file to verify that the loader correctly parses critical fields.
 
 ## License
 
-Distributed under the MIT License. See the `LICENSE` file for more information.
+Distributed under the MIT License. See the repository root `LICENSE` file for details.

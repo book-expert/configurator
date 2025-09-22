@@ -1,6 +1,4 @@
-// Package configurator provides generic TOML configuration loading and project discovery.
-// It supports rooted config discovery and type-safe unmarshaling for any project
-// structure.
+// Package configurator sets the global configuration
 package configurator
 
 import (
@@ -16,77 +14,87 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-const (
-	// DefaultURLTimeout is the default timeout for fetching a configuration from a
-	// URL.
-	DefaultURLTimeout = 10 * time.Second
-)
+// DefaultURLTimeout defines the default timeout for fetching the configuration URL.
+const DefaultURLTimeout = 10 * time.Second
 
-// Static errors for the configurator package.
-var (
-	ErrUnexpectedHTTPStatus = errors.New("unexpected HTTP status")
-	ErrProjectTomlNotSet    = errors.New("PROJECT_TOML environment variable not set")
-)
+// ErrUnexpectedHTTPStatus is returned when the HTTP request to fetch the TOML file does not return a 200 OK status.
+var ErrUnexpectedHTTPStatus = errors.New("unexpected HTTP status")
 
-// Load fetches the configuration from the URL specified in the PROJECT_TOML
-// environment variable and unmarshals it into the provided struct.
-func Load(target any, log *logger.Logger) error {
-	url := os.Getenv("PROJECT_TOML")
-	if url == "" {
+// ErrProjectTomlNotSet is returned when the PROJECT_TOML environment variable is not set.
+var ErrProjectTomlNotSet = errors.New("PROJECT_TOML environment variable not set")
+
+// Load fetches application configuration from a remote URL, specified by the PROJECT_TOML
+// environment variable, and unmarshals it into a type-safe Go struct.
+// It acts as a centralized configuration client for other services within the Book Expert project.
+func Load(target any, logger *logger.Logger) error {
+	projectTOMLURL := os.Getenv("PROJECT_TOML")
+	if projectTOMLURL == "" {
 		return ErrProjectTomlNotSet
 	}
 
-	data, err := fetchURL(url, log)
-	if err != nil {
-		return err
+	tomlContent, fetchErr := fetchURL(projectTOMLURL, logger)
+	if fetchErr != nil {
+		return fmt.Errorf("failed to fetch TOML from %s: %w", projectTOMLURL, fetchErr)
 	}
 
-	return unmarshalTOML(data, target)
-}
-
-// unmarshalTOML unmarshals TOML data into the target.
-func unmarshalTOML(data []byte, target any) error {
-	err := toml.Unmarshal(data, target)
-	if err != nil {
-		return fmt.Errorf("parse toml: %w", err)
+	unmarshalErr := unmarshalTOML(tomlContent, target)
+	if unmarshalErr != nil {
+		return fmt.Errorf("failed to unmarshal TOML: %w", unmarshalErr)
 	}
 
 	return nil
 }
 
-func fetchURL(url string, log *logger.Logger) ([]byte, error) {
+// fetchURL handles the HTTP request to fetch the TOML file from the specified URL.
+func fetchURL(url string, logger *logger.Logger) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), DefaultURLTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
-	if err != nil {
-		return nil, fmt.Errorf("create http request: %w", err)
+	req, newRequestErr := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if newRequestErr != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", newRequestErr)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetch toml from url: %w", err)
+	resp, doRequestErr := http.DefaultClient.Do(req)
+	if doRequestErr != nil {
+		return nil, fmt.Errorf("failed to execute HTTP request: %w", doRequestErr)
 	}
 
 	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			log.Warn("failed to close response body: %v", err)
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			logger.Error("failed to close response body: %v", closeErr)
 		}
 	}()
 
-	return processResponse(resp)
+	body, processResponseErr := processResponse(resp)
+	if processResponseErr != nil {
+		return nil, fmt.Errorf("failed to process HTTP response: %w", processResponseErr)
+	}
+
+	return body, nil
 }
 
+// processResponse validates the HTTP response status and reads the response body.
 func processResponse(resp *http.Response) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %s", ErrUnexpectedHTTPStatus, resp.Status)
+		return nil, fmt.Errorf("%w: %d", ErrUnexpectedHTTPStatus, resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
+	body, readAllErr := io.ReadAll(resp.Body)
+	if readAllErr != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", readAllErr)
 	}
 
-	return data, nil
+	return body, nil
+}
+
+// unmarshalTOML parses the raw TOML data into the provided Go struct.
+func unmarshalTOML(data []byte, target interface{}) error {
+	unmarshalErr := toml.Unmarshal(data, target)
+	if unmarshalErr != nil {
+		return fmt.Errorf("failed to unmarshal TOML data: %w", unmarshalErr)
+	}
+
+	return nil
 }
